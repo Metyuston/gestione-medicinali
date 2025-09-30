@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Medicinali di famiglia (offline + PWA)</title>
+  <meta name="theme-color" content="#0ea5e9">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link id="manifest-link" rel="manifest" href="#">
+  <link id="apple-icon" rel="apple-touch-icon" href="#">
+  <style>
+    :root{ --bg:#f8fafc; --card:#fff; --ink:#0f172a; --muted:#475569; --line:#e2e8f0; --sky:#0ea5e9; --emerald:#10b981; --amber:#f59e0b; --rose:#ef4444; --slate:#334155; }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--ink);font:16px system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,sans-serif}
+    h1,h2,h3{margin:0}
+    .container{max-width:960px;margin:0 auto;padding:16px}
+    header{position:sticky;top:0;z-index:10;background:rgba(255,255,255,.85);backdrop-filter:blur(4px);border-bottom:1px solid var(--line)}
+    .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+    .spacer{flex:1}
+    .badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px}
+    .btn{display:inline-flex;gap:6px;align-items:center;padding:6px 10px;border-radius:10px;border:1px solid var(--line);background:#fff;cursor:pointer}
+    .btn.primary{background:var(--sky);border-color:var(--sky);color:#fff}
+    .btn.danger{color:var(--rose)}
+    .btn:active{transform:scale(.97)}
+    input,select{padding:6px 8px;border-radius:10px;border:1px solid var(--line);background:#fff}
+    .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+    @media(max-width:640px){.grid{grid-template-columns:1fr}}
+    .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px}
+    .list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+    @media(max-width:640px){.list{grid-template-columns:1fr}}
+    .pill{width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700}
+    .ok{background:var(--emerald)} .soon{background:var(--amber)} .low{background:var(--rose)} .incomplete{background:var(--slate)}
+    .badge-ok{background:#d1fae5;color:#065f46} .badge-soon{background:#fef3c7;color:#92400e}
+    .badge-low{background:#fee2e2;color:#991b1b} .badge-incomplete{background:#e2e8f0;color:#334155}
+    .muted{color:var(--muted);font-size:14px}
+    .small{color:#64748b;font-size:12px}
+    .hidden{display:none}
+    .error{background:#ffe4e6;border-bottom:1px solid #fecdd3;color:#9f1239;padding:10px}
+    .req::after{content:" 🛈";color:var(--amber);font-size:12px}
+    [title]{cursor:help}
+  </style>
+</head>
+<body>
+  <div id="error-bar" class="error hidden"></div>
+  <header>
+    <div class="container row" style="padding:10px 14px">
+      <div class="pill ok" aria-hidden>Rx</div>
+      <h1 style="font-size:20px;font-weight:600">Medicinali di famiglia</h1>
+      <div class="spacer"></div>
+      <span id="app-version" class="small"></span>
+    </div>
+  </header>
+
+  <main class="container">
+    <div class="row" style="margin-bottom:12px">
+      <button id="btn-add" class="btn primary">➕ Nuovo</button>
+      <button id="btn-export" class="btn">⤴️ Esporta</button>
+      <label for="file-import" class="btn">⤵️ Importa</label>
+      <input id="file-import" type="file" accept="application/json" class="hidden" />
+      <div class="spacer"></div>
+      <input id="search" type="search" placeholder="Cerca..." aria-label="Cerca" />
+      <select id="filter-status" aria-label="Filtro stato">
+        <option value="all">Tutti</option>
+        <option value="ok">Ok</option>
+        <option value="soon">Presto</option>
+        <option value="low">Da riacquistare</option>
+        <option value="incomplete">Incompleti</option>
+      </select>
+    </div>
+
+    <div id="empty" class="card hidden" style="text-align:center;color:#64748b;border-style:dashed">
+      Nessun medicinale ancora. Premi <strong>Nuovo</strong> per aggiungerne uno.
+    </div>
+
+    <ul id="list" class="list"></ul>
+  </main>
+
+  <dialog id="dialog" class="card" style="width:100%;max-width:600px;padding:0">
+    <form id="form" method="dialog" style="padding:14px">
+      <div class="row" style="justify-content:space-between">
+        <h2 id="dialog-title" style="font-size:18px;font-weight:600">Nuovo medicinale</h2>
+        <button type="button" id="btn-close" class="btn">✕</button>
+      </div>
+      <div class="grid" style="margin-top:10px">
+        <label title="Obbligatorio"> <span class="small req">Nome*</span>
+          <input required name="name" placeholder="Es. Tachipirina 1000" />
+        </label>
+        <label> <span class="small">Forma</span>
+          <input name="form" placeholder="compresse, sciroppo..." />
+        </label>
+        <label title="Obbligatorio"> <span class="small req">Data inizio scatola*</span>
+          <input required type="date" name="startDate" />
+        </label>
+        <label title="Obbligatorio"> <span class="small req">Unità nella scatola*</span>
+          <input required type="number" min="1" step="1" name="unitsPerBox" />
+        </label>
+        <label title="Obbligatorio"> <span class="small req">Dose per assunzione*</span>
+          <input required type="number" min="0" step="1" name="dosePerIntake" />
+        </label>
+        <label title="Obbligatorio"> <span class="small req">Assunzioni al giorno*</span>
+          <input required type="number" min="0" step="1" name="intakesPerDay" />
+        </label>
+        <label> <span class="small">Scorta di sicurezza (giorni)</span>
+          <input type="number" min="0" step="1" name="safetyDays" />
+        </label>
+        <label> <span class="small">Note</span>
+          <input name="notes" />
+        </label>
+      </div>
+      <input type="hidden" name="id" />
+      <div class="row" style="justify-content:space-between;margin-top:10px">
+        <button type="button" id="btn-delete" class="btn danger hidden">Elimina</button>
+        <div class="row">
+          <button type="button" class="btn" id="btn-cancel">Annulla</button>
+          <button class="btn primary">Salva</button>
+        </div>
+      </div>
+      <p class="small muted" style="margin-top:10px">Campi contrassegnati con 🛈 sono obbligatori. Una scheda può risultare "Incompleta" se mancano data di inizio o valori di dose/assunzioni.</p>
+    </form>
+  </dialog>
+
+  <template id="tpl-card">
+    <li class="card">
+      <div class="row" style="align-items:flex-start">
+        <div class="pill ok" data-pillcolor>RX</div>
+        <div style="min-width:0;flex:1">
+          <div class="row" style="gap:8px;align-items:center">
+            <h3 style="font-weight:600;overflow:hidden;text-overflow:ellipsis" data-name></h3>
+            <span class="badge badge-ok" data-status-badge title="Stato"></span>
+          </div>
+          <div class="muted" data-form></div>
+          <div class="small" data-notes></div>
+        </div>
+        <button class="btn" data-edit>Modifica</button>
+      </div>
+      <div class="grid small" style="margin-top:6px">
+        <div>Inizio: <span data-start></span></div>
+        <div>Giorni coperti: <span data-days></span></div>
+        <div>Esaurimento: <span data-depletion></span></div>
+        <div>Riacquisto consigliato: <span data-reorder></span></div>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <button class="btn primary" data-ics>Scarica .ics</button>
+        <a class="btn" target="_blank" rel="noopener" data-gcal>Aggiungi a Google Calendar</a>
+      </div>
+    </li>
+  </template>
+
+  <script>
+  const APP_VERSION='1.2.0';
+  const STORE_KEY='family-meds-v1';
+  const $=(s,r=document)=>r.querySelector(s);
+  function showError(m){const b=$('#error-bar');b.textContent=m;b.classList.remove('hidden');}
+  const storage={get(){try{return JSON.parse(localStorage.getItem(STORE_KEY))||[]}catch{return[]}},set(v){try{localStorage.setItem(STORE_KEY,JSON.stringify(v))}catch{}}};
+  function toValidDate(i){const d=new Date(i||Date.now());return isNaN(d)?new Date():d;}
+  function toStartOfDay(i){const d=toValidDate(i);d.setHours(0,0,0,0);return d;}
+  function fmtDate(d){return d?toValidDate(d).toLocaleDateString('it-IT',{day:'2-digit',month:'2-digit',year:'numeric'}):'-';}
+  function computeStats(m){
+    const dose=Math.max(0,Math.trunc(Number(m.dosePerIntake||0)));
+    const intakes=Math.max(0,Math.trunc(Number(m.intakesPerDay||0)));
+    const units=Math.max(0,Math.trunc(Number(m.unitsPerBox||0)));
+    const hasStart=!!m.startDate; const daily=dose*intakes;
+    if(!hasStart||daily<=0) return { daily, daysCovered:0, depletionDate:null, reorderDate:null, status:'incomplete' };
+    const daysCovered=Math.floor(units/daily);
+    const start=toStartOfDay(m.startDate);
+    const depletion=new Date(start); depletion.setDate(start.getDate()+daysCovered);
+    const safety=Math.max(0,Math.trunc(Number(m.safetyDays||0)));
+    const reorder=new Date(depletion); reorder.setDate(depletion.getDate()-safety);
+    const today=toStartOfDay(new Date()); let status='ok';
+    if(reorder<=today && depletion>today) status='soon';
+    if(depletion<=today) status='low';
+    return { daily, daysCovered, depletionDate:depletion, reorderDate:reorder, status };
+  }
+  const statusLabel=s=> s==='ok'?'Ok': s==='soon'?'Presto': s==='low'?'Da riacquistare':'Incompleto';
+  const statusBadgeClass=s=> s==='ok'?'badge-ok': s==='soon'?'badge-soon': s==='low'?'badge-low':'badge-incomplete';
+  const pillColor=s=> s==='ok'?'ok': s==='soon'?'soon': s==='low'?'low':'incomplete';
+
+  function buildSummary(m){ const s=computeStats(m); const p=[`${m.name}`]; if(m.form) p.push(m.form); p.push(`Inizio: ${fmtDate(m.startDate)}`); if(s.depletionDate) p.push(`Esaurimento stimato: ${fmtDate(s.depletionDate)}`); return p.join(' — ');}  
+  function buildGoogleCalendarURL(m){ const s=computeStats(m); const start= toStartOfDay(s.reorderDate || new Date()); const end=new Date(start); end.setHours(1); const fmt=d=> toValidDate(d).toISOString().replace(/[-:]|\.\d{3}/g,''); const params=new URLSearchParams({action:'TEMPLATE',text:`Riacquistare: ${m.name}`,dates:`${fmt(start)}/${fmt(end)}`,details:buildSummary(m)}); return `https://calendar.google.com/calendar/render?${params}`; }
+  function downloadICS(m){ const s=computeStats(m); const start= toStartOfDay(s.reorderDate || new Date()); const end=new Date(start); end.setHours(1); function icsDate(d){ return toValidDate(d).toISOString().replace(/[-:]|\.\d{3}/g,''); } const uidStr=`${m.id||'med'}@family-meds`; const ics=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//FamilyMeds//IT//','BEGIN:VEVENT',`UID:${uidStr}`,`DTSTAMP:${icsDate(new Date())}` ,`DTSTART:${icsDate(start)}`,`DTEND:${icsDate(end)}`,`SUMMARY:Riacquistare: ${m.name}`,`DESCRIPTION:${buildSummary(m)}`,'END:VEVENT','END:VCALENDAR'].join('\r\n'); const blob=new Blob([ics],{type:'text/calendar'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=`riacquisto-${(m.name||'med').replace(/\s+/g,'-').toLowerCase()}.ics`; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url); }
+
+  function render(){
+    const list=$('#list'); list.innerHTML='';
+    state.meds
+      .map(m=>({...m,_stats:computeStats(m)}))
+      .filter(m=> state.filter.status==='all' || m._stats.status===state.filter.status)
+      .filter(m=> (m.name||'').toLowerCase().includes(state.filter.text))
+      .forEach(m=>{
+        const t=document.importNode($('#tpl-card').content,true);
+        t.querySelector('[data-name]').textContent=m.name;
+        t.querySelector('[data-form]').textContent=m.form||'';
+        t.querySelector('[data-notes]').textContent=m.notes||'';
+        t.querySelector('[data-start]').textContent=fmtDate(m.startDate);
+        t.querySelector('[data-days]').textContent=m._stats.daysCovered;
+        t.querySelector('[data-depletion]').textContent=fmtDate(m._stats.depletionDate);
+        t.querySelector('[data-reorder]').textContent=fmtDate(m._stats.reorderDate);
+        const b=t.querySelector('[data-status-badge]'); b.textContent=statusLabel(m._stats.status); b.className='badge '+statusBadgeClass(m._stats.status);
+        t.querySelector('[data-pillcolor]').className='pill '+pillColor(m._stats.status);
+        t.querySelector('[data-edit]').addEventListener('click',()=>openDialog(m.id));
+        t.querySelector('[data-ics]').addEventListener('click',()=>downloadICS(m));
+        const a=t.querySelector('[data-gcal]'); a.href=buildGoogleCalendarURL(m);
+        list.appendChild(t);
+      });
+    $('#empty').classList.toggle('hidden', list.children.length!==0);
+  }
+
+  const state={meds:storage.get(),filter:{text:'',status:'all'}};
+  function openDialog(id){ const med=id?state.meds.find(x=>x.id===id):{}; const f=$('#form'); f.name.value=med?.name||''; f.form.value=med?.form||''; f.startDate.value=med?.startDate?toValidDate(med.startDate).toISOString().slice(0,10):''; f.unitsPerBox.value=med?.unitsPerBox??''; f.dosePerIntake.value=med?.dosePerIntake??''; f.intakesPerDay.value=med?.intakesPerDay??''; f.safetyDays.value=med?.safetyDays??''; f.notes.value=med?.notes??''; f.id.value=med?.id||''; $('#btn-delete').classList.toggle('hidden',!id); $('#dialog').showModal(); }
+  function closeDialog(){ $('#dialog').close(); }
+  const integerOrZero=v=>{ v=String(v||'').trim(); return /^[0-9]+$/.test(v) ? Math.trunc(Number(v)) : 0; };
+  $('#form').addEventListener('submit',ev=>{ ev.preventDefault(); const d=Object.fromEntries(new FormData(ev.target).entries()); const med={ id:d.id||Math.random().toString(36).slice(2,10), name:String(d.name).trim(), form:String(d.form||'').trim(), startDate:d.startDate?new Date(d.startDate).toISOString():null, unitsPerBox:integerOrZero(d.unitsPerBox), dosePerIntake:integerOrZero(d.dosePerIntake), intakesPerDay:integerOrZero(d.intakesPerDay), safetyDays:integerOrZero(d.safetyDays), notes:String(d.notes||'').trim() }; const i=state.meds.findIndex(x=>x.id===d.id); if(i>=0) state.meds[i]=med; else state.meds.unshift(med); storage.set(state.meds); closeDialog(); render(); });
+
+  $('#btn-add').onclick=()=>openDialog(null);
+  $('#btn-close').onclick=closeDialog; $('#btn-cancel').onclick=closeDialog; $('#btn-delete').onclick=()=>{ const id=$('#form').id.value; const i=state.meds.findIndex(x=>x.id===id); if(i>=0) state.meds.splice(i,1); storage.set(state.meds); closeDialog(); render(); };
+  $('#search').oninput=e=>{ state.filter.text=e.target.value.toLowerCase(); render(); };
+  $('#filter-status').onchange=e=>{ state.filter.status=e.target.value; render(); };
+  $('#btn-export').onclick=()=>{ const data=JSON.stringify(state.meds,null,2); const blob=new Blob([data],{type:'application/json'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='medicinali.json'; a.click(); URL.revokeObjectURL(url); };
+  $('#file-import').onchange=e=>{ if(!e.target.files[0]) return; const r=new FileReader(); r.onload=()=>{ try{ const arr=JSON.parse(r.result); if(Array.isArray(arr)){ arr.forEach(x=>{ if(!x.id) x.id=Math.random().toString(36).slice(2,10); x.unitsPerBox=integerOrZero(x.unitsPerBox); x.dosePerIntake=integerOrZero(x.dosePerIntake); x.intakesPerDay=integerOrZero(x.intakesPerDay); x.safetyDays=integerOrZero(x.safetyDays); }); state.meds=arr; storage.set(state.meds); render(); } }catch{ alert('Errore import'); } }; r.readAsText(e.target.files[0]); e.target.value=''; };
+
+  // --- PWA inline (manifest + service worker senza file esterni) ---------------
+  function makeIconPng(size=192){
+    const c=document.createElement('canvas'); c.width=c.height=size; const g=c.getContext('2d');
+    g.fillStyle='#0ea5e9'; g.fillRect(0,0,size,size);
+    g.fillStyle='#fff'; g.font=`${Math.round(size*0.45)}px system-ui,Segoe UI,Arial`; g.textAlign='center'; g.textBaseline='middle'; g.fillText('Rx', size/2, size/2+size*0.05);
+    return c.toDataURL('image/png');
+  }
+  (function setupPWA(){
+    const icon192=makeIconPng(192), icon512=makeIconPng(512);
+    const manifest={
+      name:'Medicinali di famiglia', short_name:'Medicinali',
+      start_url:'./index.html', scope:'./', display:'standalone',
+      background_color:'#f8fafc', theme_color:'#0ea5e9',
+      icons:[ {src:icon192,sizes:'192x192',type:'image/png'}, {src:icon512,sizes:'512x512',type:'image/png'} ]
+    };
+    const blob=new Blob([JSON.stringify(manifest)],{type:'application/json'});
+    const url=URL.createObjectURL(blob);
+    const link=document.getElementById('manifest-link'); link.href=url;
+    const apple=document.getElementById('apple-icon'); apple.href=icon192;
+
+    if('serviceWorker' in navigator && location.protocol.startsWith('http')){
+      // crea un SW al volo via Blob (cache-only di questa pagina)
+      const swCode=`self.addEventListener('install',e=>{e.waitUntil(caches.open('family-meds-v1').then(c=>c.addAll(['./','./index.html'])))});
+self.addEventListener('fetch',e=>{e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).then(res=>{const copy=res.clone();caches.open('family-meds-v1').then(c=>c.put(e.request,copy));return res;})).catch(()=>caches.match('./index.html')))});`;
+      const swUrl=URL.createObjectURL(new Blob([swCode],{type:'text/javascript'}));
+      navigator.serviceWorker.register(swUrl).catch(()=>{});
+    } else {
+      // file:// non supporta SW: l'app resta offline by-design via localStorage
+    }
+  })();
+
+  // Boot
+  $('#app-version').textContent = `v${APP_VERSION}`; render();
+  </script>
+</body>
+</html>
